@@ -463,10 +463,7 @@ impl Entry for Summary {
         let response = ui.allocate_rect(rect, egui::Sense::hover());
         let hover_pos = response.hover_pos(); // where is the mouse hovering?
 
-        if self
-            .last_view_interval
-            .map_or(true, |i| i != cx.view_interval)
-        {
+        if self.last_view_interval != Some(cx.view_interval) {
             self.clear();
         }
         self.last_view_interval = Some(cx.view_interval);
@@ -593,7 +590,7 @@ impl fmt::Display for Field {
 
 struct FieldWithName<'a>(&'a str, &'a Field);
 
-impl<'a> fmt::Display for FieldWithName<'a> {
+impl fmt::Display for FieldWithName<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let FieldWithName(name, value) = self;
         match value {
@@ -695,7 +692,7 @@ impl Slot {
 
             // Check if mouse is hovering over this row
             let row_rect = Rect::from_min_max(row_min, row_max);
-            let row_hover = hover_pos.map_or(false, |h| row_rect.contains(h));
+            let row_hover = hover_pos.is_some_and(|h| row_rect.contains(h));
 
             // Now handle the items
             for (item_idx, item) in row_items.iter().enumerate() {
@@ -712,7 +709,7 @@ impl Slot {
                 let max = rect.lerp_inside(Vec2::new(stop, (irow as f32 + 0.95) / rows as f32));
 
                 let item_rect = Rect::from_min_max(min, max);
-                if row_hover && hover_pos.map_or(false, |h| item_rect.contains(h)) {
+                if row_hover && hover_pos.is_some_and(|h| item_rect.contains(h)) {
                     hover_pos = None;
                     interact_item = Some((row, item_idx, item_rect, tile_id));
                 }
@@ -887,10 +884,7 @@ impl Entry for Slot {
         let mut hover_pos = response.hover_pos(); // where is the mouse hovering?
 
         if self.expanded {
-            if self
-                .last_view_interval
-                .map_or(true, |i| i != cx.view_interval)
-            {
+            if self.last_view_interval != Some(cx.view_interval) {
                 self.clear();
             }
             self.last_view_interval = Some(cx.view_interval);

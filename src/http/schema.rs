@@ -34,7 +34,7 @@ impl TileRequestPath {
     }
 }
 
-impl<'a> TileRequestRef<'a> {
+impl TileRequestRef<'_> {
     pub fn to_slug(&self) -> String {
         format!(
             "{}/{}",

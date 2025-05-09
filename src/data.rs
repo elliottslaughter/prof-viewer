@@ -387,7 +387,7 @@ impl TileID {
 
 pub struct EntryIDSlug<'a>(pub &'a EntryID);
 
-impl<'a> fmt::Display for EntryIDSlug<'a> {
+impl fmt::Display for EntryIDSlug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, e) in self.0.0.iter().enumerate() {
             write!(f, "{}", e)?;

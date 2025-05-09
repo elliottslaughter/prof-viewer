@@ -17,7 +17,7 @@ use crate::data::{
     DataSourceDescription, DataSourceInfo, EntryID, SlotMetaTile, SlotTile, SummaryTile, TileID,
 };
 use crate::deferred_data::DeferredDataSource;
-use crate::http::fetch::{fetch, DataSourceResponse};
+use crate::http::fetch::{DataSourceResponse, fetch};
 use crate::http::schema::TileRequestRef;
 
 pub struct HTTPClientDataSource {

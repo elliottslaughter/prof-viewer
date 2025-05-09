@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use actix_cors::Cors;
 use actix_web::{
-    error, get, http, middleware,
+    App, HttpServer, Responder, Result, error, get, http, middleware,
     web::{self, Data},
-    App, HttpServer, Responder, Result,
 };
 
 use serde::Serialize;

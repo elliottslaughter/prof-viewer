@@ -160,9 +160,7 @@ impl MergeDeferredDataSource {
     fn map_src_to_dst_field(&self, idx: usize, field: &mut Field) {
         match field {
             Field::ItemLink(ItemLink {
-                ref mut item_uid,
-                ref mut entry_id,
-                ..
+                item_uid, entry_id, ..
             }) => {
                 *item_uid = self.map_src_to_dst_item_uid(idx, *item_uid);
                 *entry_id = self.map_src_to_dst_entry(idx, entry_id);

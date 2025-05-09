@@ -11,7 +11,7 @@ use egui_extras::{Column, TableBuilder};
 #[cfg(not(target_arch = "wasm32"))]
 use itertools::Itertools;
 use percentage::{Percentage, PercentageInteger};
-use regex::{escape, Regex};
+use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
 
 use crate::data::{

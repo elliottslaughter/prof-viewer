@@ -1,9 +1,9 @@
 use bytes::Bytes;
 
-#[cfg(not(target_arch = "wasm32"))]
-use reqwest::blocking::RequestBuilder;
 #[cfg(target_arch = "wasm32")]
 use reqwest::RequestBuilder;
+#[cfg(not(target_arch = "wasm32"))]
+use reqwest::blocking::RequestBuilder;
 
 pub struct DataSourceResponse {
     pub body: Bytes,

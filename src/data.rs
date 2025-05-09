@@ -218,7 +218,7 @@ pub trait DataSource {
     fn fetch_summary_tile(&self, entry_id: &EntryID, tile_id: TileID, full: bool) -> SummaryTile;
     fn fetch_slot_tile(&self, entry_id: &EntryID, tile_id: TileID, full: bool) -> SlotTile;
     fn fetch_slot_meta_tile(&self, entry_id: &EntryID, tile_id: TileID, full: bool)
-        -> SlotMetaTile;
+    -> SlotMetaTile;
 }
 
 impl EntryID {
@@ -389,9 +389,9 @@ pub struct EntryIDSlug<'a>(pub &'a EntryID);
 
 impl<'a> fmt::Display for EntryIDSlug<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, e) in self.0 .0.iter().enumerate() {
+        for (i, e) in self.0.0.iter().enumerate() {
             write!(f, "{}", e)?;
-            if i < self.0 .0.len() - 1 {
+            if i < self.0.0.len() - 1 {
                 write!(f, "_")?;
             }
         }
@@ -403,9 +403,9 @@ pub struct TileIDSlug(pub TileID);
 
 impl fmt::Display for TileIDSlug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0 .0.start.0)?;
+        write!(f, "{}", self.0.0.start.0)?;
         write!(f, "_")?;
-        write!(f, "{}", self.0 .0.stop.0)
+        write!(f, "{}", self.0.0.stop.0)
     }
 }
 

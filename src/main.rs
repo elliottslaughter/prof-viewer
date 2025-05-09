@@ -129,7 +129,7 @@ impl RandomDataSource {
     ) {
         let time = Timestamp((first.time.0 + last.time.0) / 2);
         let util = (first.util + last.util) * 0.5;
-        let diff = (rng.gen::<f32>() - 0.5) / 1.2_f32.powi(max_level - level);
+        let diff = (rng.r#gen::<f32>() - 0.5) / 1.2_f32.powi(max_level - level);
         let util = (util + diff).at_least(0.0).at_most(1.0);
         let point = UtilPoint { time, util };
         if level > 0 {
@@ -147,11 +147,11 @@ impl RandomDataSource {
             const LEVELS: i32 = 8;
             let first = UtilPoint {
                 time: self.info.interval.start,
-                util: state.rng.gen(),
+                util: state.rng.r#gen(),
             };
             let last = UtilPoint {
                 time: self.info.interval.stop,
-                util: state.rng.gen(),
+                util: state.rng.r#gen(),
             };
             let mut utilization = Vec::new();
             utilization.push(first);

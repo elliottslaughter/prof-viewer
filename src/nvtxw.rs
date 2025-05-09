@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use std::ffi::{c_char, c_void};
 use std::ffi::{CString, OsString};
+use std::ffi::{c_char, c_void};
 use std::io;
 use std::iter::zip;
 use std::mem::size_of;

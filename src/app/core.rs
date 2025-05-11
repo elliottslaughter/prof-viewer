@@ -468,13 +468,12 @@ impl Entry for Summary {
         cx.slot_rect = Some(rect); // Save slot rect for use later
 
         const TOOLTIP_RADIUS: f32 = 4.0;
-        let response = ui.allocate_rect(rect, egui::Sense::hover());
-        let hover_pos = response.hover_pos(); // where is the mouse hovering?
+        let hover_pos = ui.rect_hover_pos(rect); // where is the mouse hovering?
 
         self.inflate(config, cx);
 
         let style = ui.style();
-        let visuals = style.interact_selectable(&response, false);
+        let visuals = style.noninteractive();
         ui.painter()
             .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
 
@@ -938,14 +937,13 @@ impl Entry for Slot {
     ) {
         cx.slot_rect = Some(rect); // Save slot rect for use later
 
-        let response = ui.allocate_rect(rect, egui::Sense::hover());
-        let mut hover_pos = response.hover_pos(); // where is the mouse hovering?
+        let mut hover_pos = ui.rect_hover_pos(rect); // where is the mouse hovering?
 
         if self.expanded {
             let tile_ids = self.inflate(config, cx);
 
             let style = ui.style();
-            let visuals = style.interact_selectable(&response, false);
+            let visuals = style.noninteractive();
             ui.painter()
                 .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
 
@@ -1764,7 +1762,9 @@ impl Window {
                 button_text.into_galley(ui, None, available_width, egui::TextStyle::Button);
             let button_size = button_text.size() + 2.0 * button_padding;
 
-            let query_size = ui.available_size().x - button_size.x - ui.spacing().item_spacing.x;
+            const MARGIN: f32 = 4.0; // From egui::TextEdit::margin
+            let query_size =
+                ui.available_size().x - button_size.x - ui.spacing().item_spacing.x - 2.0 * MARGIN;
             egui::TextEdit::singleline(&mut self.config.search_state.query)
                 .desired_width(query_size)
                 .show(ui);
@@ -2770,6 +2770,7 @@ trait UiExtra {
         rect: &Rect,
         add_contents: impl FnOnce(&mut egui::Ui),
     );
+    fn rect_hover_pos(&self, rect: Rect) -> Option<Pos2>;
 }
 
 impl UiExtra for egui::Ui {
@@ -2806,6 +2807,18 @@ impl UiExtra for egui::Ui {
             rect,
             add_contents,
         );
+    }
+
+    /// Starting with egui 0.26, ui.allocate_rect() never returns interactions
+    /// for multiple overlapping rectangles at once. This method is required to
+    /// interact for more complex widgets where we want to e.g., hover one
+    /// widget while dragging another widget (where those widgets overlap).
+    fn rect_hover_pos(&self, rect: Rect) -> Option<Pos2> {
+        if self.rect_contains_pointer(rect) {
+            self.input(|i| i.pointer.hover_pos())
+        } else {
+            None
+        }
     }
 }
 

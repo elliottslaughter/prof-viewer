@@ -14,9 +14,10 @@ use percentage::{Percentage, PercentageInteger};
 use regex::{Regex, escape};
 use serde::{Deserialize, Serialize};
 
+use crate::app::tile_manager::TileManager;
 use crate::data::{
     DataSourceInfo, EntryID, EntryIndex, EntryInfo, Field, FieldID, FieldSchema, ItemLink,
-    ItemMeta, ItemUID, SlotMetaTileData, SlotTileData, SummaryTileData, TileID, TileSet, UtilPoint,
+    ItemMeta, ItemUID, SlotMetaTileData, SlotTileData, SummaryTileData, TileID, UtilPoint,
 };
 use crate::deferred_data::{
     CountingDeferredDataSource, DeferredDataSource, LruDeferredDataSource, TileResult,
@@ -60,7 +61,6 @@ struct Summary {
     entry_id: EntryID,
     color: Color32,
     tiles: BTreeMap<TileID, Option<TileResult<SummaryTileData>>>,
-    last_view_interval: Option<Interval>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +70,6 @@ struct Slot {
     long_name: String,
     expanded: bool,
     max_rows: u64,
-    tile_ids: Vec<TileID>,
 
     // These maps have to track four different kinds of states:
     //
@@ -81,8 +80,6 @@ struct Slot {
     tiles: BTreeMap<TileID, Option<TileResult<SlotTileData>>>,
     tile_metas: BTreeMap<TileID, Option<TileResult<SlotMetaTileData>>>,
     tile_metas_full: BTreeMap<TileID, Option<TileResult<SlotMetaTileData>>>,
-
-    last_view_interval: Option<Interval>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,7 +162,6 @@ struct Config {
 
     // This is just for the local profile
     interval: Interval,
-    tile_set: TileSet,
     warning_message: Option<String>,
 
     data_source: CountingDeferredDataSource<LruDeferredDataSource<Box<dyn DeferredDataSource>>>,
@@ -181,8 +177,7 @@ struct Config {
     // populate the following field to track the re-scroll when the item is found
     scroll_to_item_retry: Option<ItemLocator>,
 
-    last_request_interval: Option<Interval>,
-    request_tile_cache: Vec<TileID>,
+    tile_manager: TileManager,
 }
 
 struct Window {
@@ -398,23 +393,17 @@ trait Entry {
 }
 
 impl Summary {
-    fn clear(&mut self) {
-        self.tiles.clear();
-    }
-
-    fn validate(&mut self, cx: &Context) {
-        if self.last_view_interval != Some(cx.view_interval) {
-            self.clear();
-        }
-        self.last_view_interval = Some(cx.view_interval);
-    }
-
     fn inflate(&mut self, config: &mut Config, cx: &mut Context) {
-        for tile_id in config.request_tiles(cx.view_interval, false) {
-            config
-                .data_source
-                .fetch_summary_tile(&self.entry_id, tile_id, false);
-            self.tiles.insert(tile_id, None);
+        const PART: bool = false;
+        let tile_ids = config.request_tiles(cx.view_interval, PART);
+        Config::invalidate_cache(&tile_ids, &mut self.tiles);
+        for tile_id in tile_ids {
+            self.tiles.entry(tile_id).or_insert_with(|| {
+                config
+                    .data_source
+                    .fetch_summary_tile(&self.entry_id, tile_id, PART);
+                None
+            });
         }
     }
 }
@@ -426,7 +415,6 @@ impl Entry for Summary {
                 entry_id,
                 color: *color,
                 tiles: BTreeMap::new(),
-                last_view_interval: None,
             }
         } else {
             unreachable!()
@@ -483,10 +471,7 @@ impl Entry for Summary {
         let response = ui.allocate_rect(rect, egui::Sense::hover());
         let hover_pos = response.hover_pos(); // where is the mouse hovering?
 
-        self.validate(cx);
-        if self.tiles.is_empty() {
-            self.inflate(config, cx);
-        }
+        self.inflate(config, cx);
 
         let style = ui.style();
         let visuals = style.interact_selectable(&response, false);
@@ -637,28 +622,20 @@ impl Slot {
         }
     }
 
-    fn clear(&mut self) {
-        self.tile_ids.clear();
-        self.tiles.clear();
-        self.tile_metas.clear();
-        self.tile_metas_full.clear();
-    }
-
-    fn validate(&mut self, cx: &Context) {
-        if self.last_view_interval != Some(cx.view_interval) {
-            self.clear();
+    fn inflate(&mut self, config: &mut Config, cx: &mut Context) -> Vec<TileID> {
+        const PART: bool = false;
+        let tile_ids = config.request_tiles(cx.view_interval, PART);
+        Config::invalidate_cache(&tile_ids, &mut self.tiles);
+        Config::invalidate_cache(&tile_ids, &mut self.tile_metas);
+        for tile_id in &tile_ids {
+            self.tiles.entry(*tile_id).or_insert_with(|| {
+                config
+                    .data_source
+                    .fetch_slot_tile(&self.entry_id, *tile_id, false);
+                None
+            });
         }
-        self.last_view_interval = Some(cx.view_interval);
-    }
-
-    fn inflate(&mut self, config: &mut Config, cx: &mut Context) {
-        for tile_id in config.request_tiles(cx.view_interval, false) {
-            config
-                .data_source
-                .fetch_slot_tile(&self.entry_id, tile_id, false);
-            self.tile_ids.push(tile_id);
-            self.tiles.insert(tile_id, None);
-        }
+        tile_ids
     }
 
     fn fetch_meta_tile(
@@ -687,7 +664,7 @@ impl Slot {
     #[allow(clippy::too_many_arguments)]
     fn render_tile(
         &mut self,
-        tile_index: usize,
+        tile_id: TileID,
         rows: u64,
         mut hover_pos: Option<Pos2>,
         ui: &mut egui::Ui,
@@ -696,8 +673,6 @@ impl Slot {
         config: &mut Config,
         cx: &mut Context,
     ) -> Option<Pos2> {
-        // Hack: can't pass this as an argument because it aliases self.
-        let tile_id = self.tile_ids[tile_index];
         let tile = self.tiles.get(&tile_id).unwrap();
 
         if !tile.is_some() {
@@ -805,7 +780,8 @@ impl Slot {
         if let Some((row, item_idx, item_rect, tile_id)) = interact_item {
             // Hack: clone here  to avoid mutability conflict.
             let entry_id = self.entry_id.clone();
-            if let Some(tile_meta) = self.fetch_meta_tile(tile_id, config, false) {
+            const PART: bool = false;
+            if let Some(tile_meta) = self.fetch_meta_tile(tile_id, config, PART) {
                 let tile_meta = match tile_meta {
                     Ok(t) => t,
                     Err(e) => {
@@ -878,11 +854,9 @@ impl Entry for Slot {
                 long_name: long_name.to_owned(),
                 expanded: true,
                 max_rows: *max_rows,
-                tile_ids: Vec::new(),
                 tiles: BTreeMap::new(),
                 tile_metas: BTreeMap::new(),
                 tile_metas_full: BTreeMap::new(),
-                last_view_interval: None,
             }
         } else {
             unreachable!()
@@ -922,9 +896,11 @@ impl Entry for Slot {
     }
 
     fn inflate_meta(&mut self, config: &mut Config, cx: &mut Context) {
-        self.validate(cx);
-        for tile_id in config.request_tiles(cx.view_interval, true) {
-            self.fetch_meta_tile(tile_id, config, true);
+        const FULL: bool = true;
+        let tile_ids = config.request_tiles(cx.view_interval, FULL);
+        Config::invalidate_cache(&tile_ids, &mut self.tile_metas_full);
+        for tile_id in tile_ids {
+            self.fetch_meta_tile(tile_id, config, FULL);
         }
     }
 
@@ -966,10 +942,7 @@ impl Entry for Slot {
         let mut hover_pos = response.hover_pos(); // where is the mouse hovering?
 
         if self.expanded {
-            self.validate(cx);
-            if self.tiles.is_empty() {
-                self.inflate(config, cx);
-            }
+            let tile_ids = self.inflate(config, cx);
 
             let style = ui.style();
             let visuals = style.interact_selectable(&response, false);
@@ -977,9 +950,9 @@ impl Entry for Slot {
                 .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
 
             let rows = self.rows();
-            for tile_index in 0..self.tile_ids.len() {
+            for tile_id in tile_ids {
                 hover_pos =
-                    self.render_tile(tile_index, rows, hover_pos, ui, rect, viewport, config, cx);
+                    self.render_tile(tile_id, rows, hover_pos, ui, rect, viewport, config, cx);
             }
         }
     }
@@ -1448,7 +1421,6 @@ impl Config {
             kinds,
             kind_filter: BTreeSet::new(),
             interval,
-            tile_set,
             warning_message,
             data_source: CountingDeferredDataSource::new(LruDeferredDataSource::new(
                 data_source,
@@ -1458,57 +1430,16 @@ impl Config {
             items_selected: BTreeMap::new(),
             scroll_to_item: None,
             scroll_to_item_retry: None,
-            last_request_interval: None,
-            request_tile_cache: Vec::new(),
+            tile_manager: TileManager::new(tile_set, interval),
         }
     }
 
     fn request_tiles(&mut self, view_interval: Interval, full: bool) -> Vec<TileID> {
-        let request_interval = view_interval.intersection(self.interval);
-        if self.last_request_interval == Some(request_interval) {
-            return self.request_tile_cache.clone();
-        }
+        self.tile_manager.request_tiles(view_interval, full)
+    }
 
-        let request_duration = request_interval.duration_ns();
-        if request_duration <= 0 {
-            return Vec::new();
-        }
-
-        if self.tile_set.tiles.is_empty() {
-            // For dynamic profiles, just return the request as one tile.
-            self.request_tile_cache = vec![TileID(request_interval)];
-            return self.request_tile_cache.clone();
-        }
-
-        // We're in a static profile. Choose an appropriate level to load.
-        let chosen_level = if full {
-            // Full request must always fetch highest level of detail.
-            self.tile_set.tiles.last().unwrap()
-        } else {
-            // Otherwise estimate the best zoom level, where "best" minimizes the
-            // ratio of the tile size to request size.
-            let request_duration = request_interval.duration_ns();
-            self.tile_set
-                .tiles
-                .iter()
-                .min_by_key(|level| {
-                    let d = level.first().unwrap().0.duration_ns();
-                    if d < request_duration {
-                        request_duration / d
-                    } else {
-                        d / request_duration
-                    }
-                })
-                .unwrap()
-        };
-
-        // Now filter to just tiles overlapping the requested interval.
-        self.request_tile_cache = chosen_level
-            .iter()
-            .filter(|tile| request_interval.overlaps(tile.0))
-            .copied()
-            .collect();
-        self.request_tile_cache.clone()
+    fn invalidate_cache<T>(tile_ids: &[TileID], cache: &mut BTreeMap<TileID, T>) {
+        TileManager::invalidate_cache(tile_ids, cache);
     }
 
     fn scroll_to_item(&mut self, item_loc: ItemLocator) {
